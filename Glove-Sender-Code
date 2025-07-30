@@ -1,0 +1,66 @@
+//glove code, sender
+
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <Wire.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial BTserial(2, 3);          // HC-05  RX,TX
+Adafruit_MPU6050 mpu;
+
+/* Flex sensors */
+#define FLEX_SHOULDER A2
+#define FLEX_ELBOW    A1
+#define FLEX_GRIPPER  A0
+
+const int minF = 200, maxF = 800;
+
+void setup() {
+  Serial.begin(9600);
+  BTserial.begin(9600);
+
+  if (!mpu.begin()) {
+    while (1) {
+      Serial.println("MPU6050 connection failed!");
+      delay(500);
+    }
+  }
+
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
+  Serial.println("Glove ready.");
+}
+
+void loop() {
+  // Flex readings mapped to angles
+  int S = map(analogRead(FLEX_SHOULDER), minF, maxF, 45, 120);
+  int E = map(analogRead(FLEX_ELBOW),    minF, maxF, 90, 160);
+  int G = map(analogRead(FLEX_GRIPPER),  minF, maxF, 40, 120);
+  S = constrain(S, 0, 180);
+  E = constrain(E, 0, 180);
+  G = constrain(G, 0, 180);
+
+  // Get MPU6050 readings
+  sensors_event_t a, g, t;
+  mpu.getEvent(&a, &g, &t);
+
+  // Roll = wrist rotation (R:)
+  float roll = atan2(a.acceleration.y, a.acceleration.z) * 180 / PI;
+  int R = constrain(map((int)roll, -90, 90, 0, 180), 0, 180);
+
+  // NEW: Lateral hand motion (left/right movement of whole arm)
+  float baseMove = a.acceleration.y;
+  int B = constrain(map((int)(baseMove * 100), -100, 100, 0, 180), 0, 180);
+
+  // Construct packet
+  String pkt = "S:" + String(S) + "|E:" + String(E) + "|G:" + String(G) +
+               "|R:" + String(R) + "|B:" + String(B);
+
+  BTserial.println(pkt);
+  BTserial.flush();
+  Serial.println("Tx: " + pkt);
+
+  delay(100); // 10 Hz
+}
